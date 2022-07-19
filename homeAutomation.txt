@@ -1,0 +1,492 @@
+#include <DHT.h>
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+#include <ESP8266WebServer.h>
+
+const int pir_sensor=4; //D2
+const int dht_sensor=5; //D1
+const int Water_level_Sensor=A0;
+
+ESP8266WebServer esp(80);
+DHT dht(dht_sensor,DHT11);
+
+//Actaully D4 and GPIO2
+const int door = 16;          //D0
+const int bedroomLamp = 2;    //D4
+const int Fan = 0;            //D3
+const int tableLamp = 14;     //D5
+const int washroomLamp = 12;  //D6
+const int ac = 13;            //D7
+const int moter = 15;         //D8
+
+int temperature=0;
+int humidity = 0;
+int heatIndex = 0;
+int temperatureF=0;
+
+IPAddress ipAddress; 
+
+bool pirS = true;
+bool dhtS = true;
+bool waterS =true;
+
+void setup() {
+ pinMode(pir_sensor,INPUT);
+ pinMode(door,OUTPUT);
+ pinMode(bedroomLamp,OUTPUT);
+ pinMode(Fan,OUTPUT);
+ pinMode(washroomLamp,OUTPUT);
+ pinMode(ac,OUTPUT);
+ pinMode(tableLamp,OUTPUT);
+ pinMode(moter,OUTPUT);
+ 
+ digitalWrite(door,HIGH);
+ digitalWrite(bedroomLamp,HIGH);
+ digitalWrite(Fan,HIGH);
+ digitalWrite(washroomLamp,HIGH);
+ digitalWrite(tableLamp,HIGH);
+ digitalWrite(ac,HIGH);
+ digitalWrite(moter,HIGH);
+ 
+ Serial.begin(115200);
+ dht.begin();
+
+ //Turn on ESP8266 station mode: connecting to WiFi Hot sopt
+ WiFi.begin("iot","11111111");
+
+ //Stop ESP from running unless connected to HOTSPOT
+ Serial.println("Loading");
+ int times=0;
+ while(WiFi.status() != WL_CONNECTED){
+  delay(300);
+  times++;
+  if(times==10){
+    Serial.println();
+  }
+  Serial.print(".");
+  delay(300);
+ }
+ Serial.println();
+ Serial.println("Ready");
+ ipAddress=WiFi.localIP();
+ Serial.println(ipAddress);
+ 
+ esp.on("/",processRoot);
+ esp.on("/Ajax",HTTP_POST,Ajax);
+ esp.begin();
+}
+void processRoot(){
+  esp.send(200,"text/html",WebPage());
+}
+void Ajax(){
+  String cmd = esp.arg("cmd");
+  HandleLoad(cmd);
+  esp.send(200,"text/html",AjaxWebPage());
+}
+void loop() {
+   esp.handleClient();
+   CalculateTemp();
+   if(waterS){
+    checkWaterLevel();
+   }
+   if(dhtS){
+    checkTemp();
+   }
+   if(pirS){
+    checkMotion();
+   }
+   delay(50);
+}
+void CalculateTemp(){
+  temperature = dht.readTemperature();
+  humidity = dht.readHumidity();
+  temperatureF=dht.readTemperature(true);
+  heatIndex = dht.computeHeatIndex(temperature,humidity,false);
+}
+void checkWaterLevel(){
+  int Water_level=analogRead(Water_level_Sensor);
+  if( Water_level<=100){
+    digitalWrite(moter,LOW);
+  }else if(Water_level>100 &&  Water_level<=300){ 
+    Serial.println("Water Lavel : Low");
+    digitalWrite(moter,LOW);
+  }else if( Water_level>330 && Water_level<=330){
+    Serial.println("Water Lavel : Medium ");
+    digitalWrite(moter,LOW); 
+  }else if( Water_level>330){
+    Serial.println("Water Lavel : High");
+    digitalWrite(moter,HIGH);
+  }
+}
+void checkTemp(){
+   if(temperature >  32){
+    digitalWrite(Fan,LOW);
+  }else{
+    digitalWrite(Fan,HIGH);
+  }
+}
+void checkMotion(){
+  int motion=digitalRead(pir_sensor);
+  if(motion){
+    digitalWrite(bedroomLamp,LOW);
+  }else{
+    digitalWrite(bedroomLamp,HIGH);
+  }
+}
+void HandleLoad(String cmd){
+    if(cmd=="1"){
+      digitalWrite(bedroomLamp,!digitalRead(bedroomLamp));
+    }else if(cmd=="2"){
+       digitalWrite(tableLamp,!digitalRead(tableLamp));
+    }else if(cmd=="3"){
+      digitalWrite(washroomLamp,!digitalRead(washroomLamp));
+    }else if(cmd=="4"){
+       digitalWrite(Fan,!digitalRead(Fan));
+    }else if(cmd=="5"){
+      digitalWrite(ac,!digitalRead(ac));
+    }else if(cmd=="6"){
+      digitalWrite(door,!digitalRead(door));
+    }else if(cmd=="7"){
+      digitalWrite(moter,!digitalRead(moter));
+    }else if(cmd=="10"){
+      pirS=(!pirS);
+    }else if(cmd=="11"){
+      dhtS=(!dhtS);
+    }else if(cmd=="12"){
+      waterS=(!waterS);
+    }
+}
+String WebPage(){
+  String page="<!DOCTYPE html>"
+              "<html lang='en'>"
+              "<head>"
+                  "<meta charset='UTF-8'>"
+                  "<meta http-equiv='X-UA-Compatible' content='IE=edge'>"
+                  "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+                  "<link href='https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css'"
+                  "rel='stylesheet'>"
+                  "<title>Home Automation</title>"
+                  "<style>"
+                      "*{"
+                          "padding: 0%;"
+                          "margin: 0%;"
+                          "box-sizing: border-box;"
+                      "}"
+                      "body{"
+                          "width: 100%;"
+                          "height: 100vh;"
+                          "background-color: rgb(34, 34, 37);"
+                      "}"
+                      ".main{"
+                          "display: flex;"
+                          "justify-content: center;"
+                          "flex-direction: column;"
+                          "align-items: center;"
+                          "height: 100%;"
+                      "}"
+                      
+                      ".toggle {"
+                          "--width: 70px;"
+                          "--height: calc(var(--width) / 2);"
+                          "--border-radius: calc(var(--height) / 2);"
+                          "margin: 10px;"
+                          "display: inline-block;"
+                          "cursor: pointer;"
+                        "}"
+                        
+                        ".toggle__input {"
+                          "display: none;"
+                        "}"
+                        ".sensortxt{"
+                            "text-align: center;"
+                            "color: #dddddd;"
+                            "margin-bottom:5px ;"
+                            "text-transform: capitalize;"
+                        "}"
+                        ".toggle__fill {"
+                          "position: relative;"
+                          "width: var(--width);"
+                          "height: var(--height);"
+                          "border-radius: var(--border-radius);"
+                          "background: #dddddd;"
+                          "transition: background 0.2s;"
+                          "display: flex;"
+                          "flex-direction: row;"
+                        "}"
+                        ".toggle__fill span:first-child{"
+                            "width: 50%;"
+                            "height: 100%;"
+                            "padding: 10px 0 0 10px;"
+                            "color: #dddddd;"
+                            "text-transform: uppercase;"
+                            "font-size: 0.85rem;"
+                       "}"
+                        ".toggle__fill span:last-child{"
+                          "width: 50%;"
+                          "height: 100%;"
+                          "padding: 10px 0 0 2px;"
+                          "color: #009578;"
+                          "text-transform: uppercase;"
+                          "font-size: 0.85rem;"
+                      "}"
+                        ".toggle__fill::after {"
+                          "content: '';"
+                          "position: absolute;"
+                          "top: 0;"
+                          "left: 0;"
+                          "height: var(--height);"
+                          "width: var(--height);"
+                          "background: #ffffff;"
+                          "box-shadow: 0 0 10px rgba(0, 0, 0, 0.25);"
+                          "border-radius: var(--border-radius);"
+                          "transition: transform 0.2s;"
+                        "}"
+                        
+                        ".toggle__fill.active::after {"
+                          "transform: translateX(var(--height));"
+                       "}"
+                        ".toggle__fill.active {"
+                          "background: #009578;"
+                        "}"
+                        
+                      ".wrapper{"
+                        "display: flex;"
+                          "margin: 5px;"
+                      "}"
+                      ".box:hover{"
+                        "cursor:pointer;"
+                      "}"
+                      ".box{"
+                        "margin: 10px;"
+                        "width: 70px;"
+                        "height: 70px;"
+                        "box-shadow: inset 1px 1px 6px 0 #fff,"
+                              "inset 0px 0px 6px 0 #000;"
+                        "display: flex;"  
+                        "align-items: center;"
+                        "justify-content: center;"
+                        "border-radius: 50%;"
+                        "transition: 0.5s all ease;"
+                      "}"
+                      ".button .active{"
+                        "box-shadow: inset 0px 0px 6px 0 #fff,"
+                              "inset 1px 1px 6px 0 #000;" 
+                      "}"
+                      ".active h3{"
+                        "color: #0ff;"
+                        "text-shadow: 0px 0px 5px #0ff;"
+                        "transition: 0.5s all ease;"
+                      "}"
+                      
+                      ".contant{"
+                          "color: #dddddd;"
+                          "text-align: center;"
+                          "text-transform: capitalize;"
+                      "}"
+                      ".temp{"
+                         "display: flex;"
+                         "flex-direction: column;"
+                        " justify-content: space-between;"
+                      "}"
+                      ".temp>div{"
+                          "display: flex;"
+                          "justify-content: space-between;"
+                      "}"
+                      ".temp>div span:first-child{"
+                          "font-size: 0.85rem;"
+                          "width: 60%;"
+                      "}"
+                      ".temp>div span{"
+                          "display: inline-block;"
+                          "color: #dddddd;"
+                      "}"
+                      ".temp progress{"
+                          "width: 100px;"
+                      "}"
+                  "</style>"
+              "</head>"
+              "<body>"
+                  "<main class='main'>";
+                  page+=AjaxWebPage();    
+                  page+="</main>"
+                  "<script>"
+                  "var boxes = document.querySelectorAll('.box');"
+                  "var toggle__fill = document.querySelectorAll('.toggle__fill');"
+                    "makeListeners();"
+                      "function makeListeners(){"
+                          "boxes = document.querySelectorAll('.box');"
+                          "toggle__fill = document.querySelectorAll('.toggle__fill');"
+                          "boxes.forEach(el => {"
+                              "el.addEventListener('click', ()=>{"
+                                  "el.classList.toggle('active');"
+                                  "loadDoc(el.id);"
+                                "});"
+                        "});"
+                          "toggle__fill.forEach(tf => {"
+                              "tf.addEventListener('click', ()=>{"
+                                  "tf.classList.toggle('active');"
+                                  "loadDoc(tf.id);});"
+                                "});"
+                      "}"
+                      "function loadDoc(id) {"
+                              "var xhttp = new XMLHttpRequest();"
+                              "xhttp.onreadystatechange = function() {"
+                                  "if (this.readyState == 4 && this.status == 200) {"
+                                  "let main=document.querySelector('.main');"
+                                  "main.innerHTML= this.responseText;"
+                                  "makeListeners()"
+                                    "}"
+                              "};"
+                              "xhttp.open('POST', 'http://";
+                              page+=Ip();
+                              page+="/Ajax', true );"
+                              "xhttp.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');"
+                              "xhttp.send('cmd='+id);"
+                      "}"
+                      "setInterval(function(){"
+                        "loadDoc(0);"
+                        "},15000);"
+                  "</script>"
+              "</body>"
+              "</html>";
+              return page;
+}
+String AjaxWebPage(){
+  String page="<div class='temp'>";
+                   page+="<div>"
+                  "<span>Temperature in Deg-cel</span>"
+                  "<progress value='";
+                  page+=temperature;
+                  page+="' max='45'></progress>"
+                  "<span>";
+                  page+=temperature;
+                  page+="C </span>"
+              "</div>"
+              "<div>"
+                 "<span>Temperature in farenhite</span>"
+                 "<progress value='";
+                 page+=temperatureF;
+                 page+="' max='100'></progress>"
+                 "<span>";
+                  page+=temperatureF;
+                  page+="F</span>"
+              "</div>"
+              "<div>"
+                  " <span>Humidity</span>"
+                  "<progress value='";
+                  page+=humidity;
+                  page+="' max='100'></progress>"
+                  "<span>";
+                  page+=humidity;
+                  page+="%</span>"
+              "</div>"
+              "<div>"
+                "<span>Heat Index</span>"
+                  "<progress value='";
+                  page+=heatIndex;
+                  page+="' max='50'></progress>"
+                  "<span>";
+                  page+=heatIndex;
+                  page+="</span>"
+              "</div>";
+                       page+="</div>"
+                      "<div class='sensers'>"
+                          "<label class='toggle' for='myToggle1'>"
+                              "<div class='sensortxt'>Motion </div>";
+                             page+= "<div id='10' class='toggle__fill ";
+                             page+=pirS ? " active" : "";
+                             page+="'>"
+                             "<span>on</span>"
+                                 "<span>off</span>"
+                              "</div>"
+                          "</label>"
+                          "<label class='toggle' for='myToggle2'>"
+                              "<div class='sensortxt'>Temp</div>"
+                              "<div id='11' class='toggle__fill";
+                              page+= dhtS ? " active" : "";
+                              page+="'>"
+                              "<span>on</span>"
+                                 "<span>off</span>"
+                              "</div>"
+                          "</label>"
+                          "<label class='toggle' for='myToggle3'>"
+                              "<div class='sensortxt'>water</div>"
+                              "<div id='12' class='toggle__fill";
+                              page+=waterS ? " active" : "";
+                             page+="'>"
+                                 "<span>on</span>"
+                                 "<span>off</span>"
+                              "</div>"
+                          "</label>"
+                      "</div>"
+                      "<div class='wrapper'>"
+                          "<div class='button'>"
+                              "<div id='6' class='box";
+                              page+= digitalRead(door) ? "":" active";
+                              page+="'>"
+                                  "<h3><i class='fa fa-power-off'></i></h3>"
+                              "</div>"
+                              "<div class='contant'>Door</div>"
+                          "</div>"
+                         "<div class='button'>"
+                              "<div id='1' class='box";
+                               page+= digitalRead(bedroomLamp) ? "" : " active";
+                              page+="'>"
+                                  "<h3><i class='fa fa-power-off'></i></h3>"
+                              "</div>"
+                              "<div class='contant'>Bed Room Lamp</div>"
+                         "</div>"
+                         "<div class='button'>"
+                              "<div id='4' class='box";
+                               page+= digitalRead(Fan) ? "" : " active";
+                              page+="'>"
+                                  "<h3><i class='fa fa-power-off'></i></h3>"
+                              "</div>"
+                              "<div class='contant'>Fan</div>"
+                         "</div>"
+                      "</div>"
+                      "<div class='wrapper'>"
+                          "<div class='button'>"
+                              "<div id='5' class='box";
+                               page+= digitalRead(ac) ? "" : " active";
+                              page+="'>"
+                                  "<h3><i class='fa fa-power-off'></i></h3>"
+                              "</div>"
+                              "<div class='contant'>Ac</div>"
+                          "</div>"
+                         "<div class='button'>"
+                              "<div id='2' class='box";
+                               page+= digitalRead(tableLamp) ? "" : " active";
+                              page+="'>"
+                                  "<h3><i class='fa fa-power-off'></i></h3>"
+                              "</div>"
+                              "<div class='contant'>Table Lamp</div>"
+                         "</div>"
+                         "<div class='button'>"
+                              "<div id='7' class='box";
+                               page+= digitalRead(moter) ? "" : " active";
+                              page+="'>"
+                                  "<h3><i class='fa fa-power-off'></i></h3>"
+                              "</div>"
+                              "<div class='contant'>Moter</div>"
+                         "</div>"
+                      "</div>"
+                      "<div class='wrapper'>"
+                          "<div class='button'>"
+                              "<div id='3' class='box";
+                               page+= digitalRead(washroomLamp) ? "" : " active";
+                              page+="'>"
+                                  "<h3><i class='fa fa-power-off'></i></h3>"
+                              "</div>"
+                              "<div class='contant'>WashroomLamp</div>"
+                          "</div>"
+                      "</div>";
+                      return page;
+}
+String Ip(){
+  return 
+  String(ipAddress[0]) + String(".") +
+   String(ipAddress[1]) + String(".") +
+   String(ipAddress[2]) + String(".") +
+   String(ipAddress[3]); 
+}
